@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "var-es-toolbox"
+version = "0.1.0"
+description = ""
+authors = ["chrisdybdahl <chrisdybdahl@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.2.3"
+jupyter = "^1.1.1"
+numpy = "^2.1.2"
+rpy2 = "^3.5.16"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
