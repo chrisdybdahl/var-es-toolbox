@@ -1,4 +1,15 @@
 
-#IDE
-.idea
+# Byte-compiled files
+__pychache__/
 
+# Data
+
+# IDE
+.idea/
+
+# Jupyter notebook metadata
+.ipynb_checkpoints/
+
+# Linter
+/.ruff_cache/
+.pre-commit-config.yaml
