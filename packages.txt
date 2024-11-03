@@ -1,0 +1,1 @@
+python=3.12 matplotlib numpy pandas pathlib jupyter conda-forge::rpy2 conda-forge::arch-py conda-forge::r-renv conda-forge::r-rprojroot

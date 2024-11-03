@@ -8,6 +8,6 @@ def load_data(data_dir: Path, date_format: str = None) -> pd.DataFrame:
     if date_format:
         data.index = pd.to_datetime(data.index, format=date_format)
     else:
-        data.index = pd.to_datetime(data.index, dayfirst=True)
+        data.index = pd.to_datetime(data.index)
 
     return data
