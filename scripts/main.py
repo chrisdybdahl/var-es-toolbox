@@ -12,4 +12,4 @@ if __name__ == '__main__':
     renv::activate(project = project_dir)
     ''')
 
-    # robjects.r('''install.package('rpy2')''')
+    # robjects.r('''install.packages("")''')
