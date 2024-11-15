@@ -3,7 +3,7 @@ from renv_utils import activate_renv, snapshot_renv
 from var_es_toolbox.data import load_data
 
 activate_renv()
-# snapshot_renv()
+snapshot_renv()
 
 from rpy2.robjects import globalenv, r, pandas2ri
 
