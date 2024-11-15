@@ -45,12 +45,13 @@ forecast_u_CAViaR_var <- function(data, c, n, m, r = 20, model_type = "adaptive"
     var[i] <- model_function(window_xts, c, betas)[m]
   }
 
+  # TODO: Need to do new xts?
   var <- -xts(var, order.by = tail(data$Date, n))
 
   return(var)
 }
 
-quantile_loss_function <- function(data, c, betas, func) {
+quantile_loss_function <- function(data, c, betas, func) { # TODO: Check if need betas in argument
   function(betas) {
     Q <- func(data, c, betas)
     res <- sum(c * abs(data - Q) * (data > Q)) + sum((1 - c) * abs(data - Q) * (data < Q))

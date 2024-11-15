@@ -1,4 +1,3 @@
-library(PerformanceAnalytics)
 library(xts)
 library(quarks)
 library(rugarch)
