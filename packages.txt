@@ -1,1 +1,6 @@
-python=3.12 matplotlib numpy pandas pathlib jupyter conda-forge::rpy2 conda-forge::arch-py conda-forge::r-renv conda-forge::r-rprojroot
+conda create -n var-es-env python=3.12 matplotlib numpy pandas pathlib jupyter conda-forge::rpy2 conda-forge::arch-py conda-forge::r-renv conda-forge::r-rprojroot
+
+conda create -n var-es-r conda-forge::r-base=4.4.1 conda-forge::r-renv
+
+C:\Users\chris\anaconda\envs\var-es-r\lib\R\bin\R.exe
+C:/Users/chris/PycharmProjects/var-es-toolbox/src/var_es_toolbox/backtesting
