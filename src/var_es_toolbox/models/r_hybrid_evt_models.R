@@ -23,35 +23,56 @@ fit_GARCH <- function(
     solver = solver,
     solver.control = solver.control
   )
-  residuals <- residuals(fit, standardize = TRUE)
-  sigma <- sigma(fit)
+  sigma <- rugarch::sigma(fit)
+  residuals <- rugarch::residuals(fit, standardize = TRUE)
 
   return(list(residuals = residuals, sigma = sigma, fit = fit))
 }
 
 fit_POT_EVT <- function(residuals, c, t) {
-  u <- quantile(residuals, t)
-  # Time-series approach
+  # Model the lower tail
+  residuals <- - residuals
+
+  # Threshold selection
+  u <- quantile(residuals, probs = t)
+
+  # Calculate exceedances with a time-series framework
   exceedances <- (residuals - u) * (residuals > u)
 
-  if (length(exceedances) < 5) {
+  # Calculate exceedances with a marked point process framework
+  # exceedances <- residuals[residuals > u] - u
+
+  if (length(exceedances[exceedances > 0]) < 5) {
     warning("Not enough exceedances for EVT fitting. Skipping EVT adjustment.")
-    return(NA)
+    var_evt <- NA
+  } else {
+    # Fit the Generalized Pareto Distribution
+    evt_fit <- evir::gpd(exceedances, threshold = u)
+    xi <- evt_fit$par.ests["xi"]
+    beta <- evt_fit$par.ests["beta"]
+
+    # EVT quantile adjustment
+    N <- length(residuals)
+    n_u <- length(exceedances)
+
+    # Using Pickands-Balkema-de Haan Extreme Value Theorem (Balkema & de Haan, 1974) we can derive VaR for GPD
+    # From Hull (2018) we have a definition for ES for GPD
+    if (xi != 0) {
+      var_evt <- u + (beta / xi) * (((N / n_u) * (1 - c))^(-xi) - 1)
+      es_evt <- (var_evt + beta - u * xi) / (1 - xi)
+    } else if (xi == 0) {
+      var_evt <- u - beta * log((N / n_u) * (1 - c))
+      es_evt <- var_evt + beta
+    } else {
+      var_evt <- NA
+      es_evt <- NA
+      }
+
   }
-
-  evt_fit <- gpd(exceedances, threshold = u)
-  xi <- evt_fit$par.ests["xi"]
-  beta <- evt_fit$par.ests["beta"]
-
-  N <- length(residuals)
-  n_u <- length(exceedances)
-
-  # Calculate EVT VaR
-  var_evt <- u + (beta / xi) * (((N / n_u) * (1 - c))^(-xi) - 1)
-  return(var_evt)
+  return(list(VaR_evt = var_evt, ES_evt = es_evt))
 }
 
-forecast_u_EVT_GARCH_var_2 <- function(
+forecast_u_EVT_GARCH_var <- function(
   data,
   c,
   n,
@@ -68,6 +89,7 @@ forecast_u_EVT_GARCH_var_2 <- function(
   data_xts <- xts(df$Return, order.by = df$Date)
 
   var <- numeric(n)
+  es <- numeric(n)
   for (i in 1:n) {
     window_start <- i
     window_end <- m + i - 1
@@ -86,84 +108,28 @@ forecast_u_EVT_GARCH_var_2 <- function(
     residuals <- garch_result$residuals
     sigmaFor <- tail(garch_result$sigma, 1)
 
-    var_evt <- fit_POT_EVT(residuals, t, c)
+    evt_result <- fit_POT_EVT(residuals, c, t)
+
+    var_evt <- evt_result$VaR_evt
+    es_evt <- evt_result$ES_evt
 
     if (!is.na(var_evt)) {
       warning("VaR_EVT, VaR before conditional volatility adjustment, was NA.")
       # TODO: Assume mu is zero
-      var[i] <- -sigmaFor * var_evt
+      var[i] <- sigmaFor * var_evt
+      es[i] <- sigmaFor * es_evt
     } else {
       var[i] <- NA
+      es[i] <- NA
     }
   }
 
-  var <- xts(var, order.by = tail(data$Date, n))
+  # Create xts objects for VaR and ES
+  dates <- tail(data$Date, n)
+  VaR <- xts(as.numeric(var), order.by = dates, colnames = "VaR")
+  ES <- xts(as.numeric(es), order.by = dates, colnames = "ES")
+  results_xts <- merge(VaR, ES)
 
-  return(var)
-}
 
-forecast_u_EVT_GARCH_var <- function(
-  data,
-  c,
-  n,
-  m,
-  t = 0.95,
-  p = 1,
-  q = 1,
-  r = 1,
-  model = "sGARCH",
-  dist = "norm",
-  cluster = NULL
-) {
-  spec <- ugarchspec(
-    mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
-    variance.model = list(garchOrder = c(p, q), model = model),
-    distribution.model = dist
-  )
-
-  df <- tail(data, n + m)
-  data_xts <- xts(df$Return, order.by = df$Date)
-
-  garch_roll <- ugarchroll(
-    spec = spec,
-    data = data_xts,
-    forecast.length = n,
-    window.size = m,
-    refit.every = r,
-    refit.window = 'moving',
-    calculate.VaR = TRUE,
-    VaR.alpha = c,
-    cluster = cluster
-  )
-
-  muFor <- garch_roll@forecast$density$Mu
-  sigmaFor <- garch_roll@forecast$density$Sigma
-  realized <- garch_roll@forecast$density$Realized
-
-  standardized_residuals <- (realized - muFor) / sigmaFor
-
-  # Peak over Thresholds, time-series approach
-  threshold <- quantile(standardized_residuals, t)
-  exceedances <- (standardized_residuals - threshold) * (standardized_residuals > threshold)
-
-  if (length(exceedances) < 5) {
-    warning("Not enough exceedances for EVT fitting, skipping EVT adjustment.")
-    var_evt <- 0
-  } else {
-    evt_fit <- gpd(exceedances, threshold = t)
-    xi <- evt_fit$par.ests["xi"]
-    beta <- evt_fit$par.ests["beta"]
-
-    # EVT quantile adjustment
-    N <- length(standardized_residuals)
-    n_exceed <- length(exceedances)
-    var_evt <- threshold + (beta / xi) * (((N / n_exceed) * (1 - c))^(-xi) - 1)
-  }
-
-  # TODO: Assume mu is zero
-  var <- -sigmaFor * var_evt
-
-  var <- xts(var, order.by = tail(data$Date, n))
-
-  return(var)
+  return(results_xts)
 }
