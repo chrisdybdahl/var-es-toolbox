@@ -11,10 +11,11 @@ forecast_u_HS_var <- function(data, c, n, m) {
                   nout = n,
                   nwin = m
   )
-  var <- xts(res$VaR, order.by = tail(data$Date, n))
-  print(var)
-
-  return(var)
+  VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")
+  ES <- xts(res$ES, order.by = tail(data$Date, n), colnames = "ES")
+  results_xts <- merge(VaR, ES)
+  
+  return(results_xts)
 }
 
 forecast_u_FHS_EWMA_var <- function(data, c, n, m, b = 10000) {
@@ -28,9 +29,11 @@ forecast_u_FHS_EWMA_var <- function(data, c, n, m, b = 10000) {
                   nwin = m,
                   nboot = b
   )
-  var <- xts(res$VaR, order.by = tail(data$Date, n))
-
-  return(var)
+  VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")
+  ES <- xts(res$ES, order.by = tail(data$Date, n), colnames = "ES")
+  results_xts <- merge(VaR, ES)
+  
+  return(results_xts)
 }
 
 forecast_u_FHS_GARCH_var <- function(data, c, n, m, p = 1, q = 1, b = 10000, model = "sGARCH") {
@@ -49,7 +52,9 @@ forecast_u_FHS_GARCH_var <- function(data, c, n, m, p = 1, q = 1, b = 10000, mod
                   variance.model = variance.model,
                   mean.model = mean.model
   )
-  var <- xts(res$VaR, order.by = tail(data$Date, n))
-
-  return(var)
+  VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")
+  ES <- xts(res$ES, order.by = tail(data$Date, n), colnames = "ES")
+  results_xts <- merge(VaR, ES)
+  
+  return(results_xts)
 }

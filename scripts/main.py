@@ -3,19 +3,25 @@ from renv_utils import activate_renv, snapshot_renv
 from var_es_toolbox.data import load_data
 
 activate_renv()
-snapshot_renv()
+# snapshot_renv()
 
 from rpy2.robjects import globalenv, r, pandas2ri
 
 project_dir = Path(__file__).resolve().parents[1]
 
+# TODO Fix that all r code returns in list(out1, out2, etc.) format
+
 if __name__ == '__main__':
+    # Asset
+    asset = "DPc1_return"
+    globalenv["asset"] = str(asset)
+
     # Retrieve data
     data_dir = project_dir / "data"
-    data_cleaned_name = "refinitiv_data_cleaned.csv"
+    data_cleaned_name = "refinitiv_data_merged.csv"
     date_format = "ISO8601"
     data_cleaned = load_data(data_dir / data_cleaned_name, date_format=date_format)
-    futures_returns = data_cleaned.iloc[:, 1]
+    futures_returns = data_cleaned[asset].dropna()
 
     # Retrieve r model
     models_dir = project_dir / "src" / "var_es_toolbox" / "models"
@@ -62,7 +68,7 @@ if __name__ == '__main__':
     library(ggplot2)             
     library(parallel)
     
-    names(df)[names(df) == "DBc1_return"] <- "Return"
+    names(df)[names(df) == asset] <- "Return"
     returns <- xts(tail(df$Return, n), order.by = tail(df$Date, n))
     
     desc_stat <- psych::describe(df_all)
@@ -73,16 +79,48 @@ if __name__ == '__main__':
         ggtitle("DBc1 Returns") +
         xlab("Date") +
         ylab("Return (%)")
+           
+    # Define the function for plotting returns, VaR, and ES
+    plot_var_es <- function(dates, returns, var, es) {
+      # Create a data frame for plotting
+      plot_data <- data.frame(
+        Date = dates,
+        Return = returns,
+        VaR = var,
+        ES = es
+      )
+      
+      # Generate the plot using ggplot2
+      ggplot(plot_data, aes(x = Date)) +
+        geom_line(aes(y = Return), color = "blue", linewidth = 0.7, alpha = 0.8) +    # Actual returns
+        geom_line(aes(y = VaR), color = "red", linetype = "dashed", linewidth = 0.7) + # VaR
+        geom_line(aes(y = ES), color = "darkorange", linetype = "dotted", linewidth = 0.7) + # ES
+        ggtitle("Actual Returns vs. VaR and ES") +
+        xlab("Date") +
+        ylab("Returns / VaR / ES") +
+        theme_minimal() +
+        theme(
+          plot.title = element_text(hjust = 0.5),
+          legend.position = "top"
+        ) +
+        scale_y_continuous(labels = scales::percent)
+    }
     ''')
 
     # Run VaR forecast
     r('''
-    source(r_hybrid_evt_models_path)
+    source(r_caviar_models_path)
+
+    result <- forecast_u_CAViaR_var(df, c, n, m, r = 50, var_model = "adaptive", itermax = 20, verbose = TRUE)
     
-    var <- forecast_u_EVT_GARCH_var(df, c, n, m, t = 0.95)
-    print(var)
+    var <- -result$VaR
     VaRplot(c, returns, var)
     print(VaRTest(c, returns, var))
+    
+    es <- -result$ES
+    print(ESTest(c, returns, es, var))
+    
+    plot_var_es(dates, returns, var, es)
     ''')
 
     # r('''renv::install("evir")''')
