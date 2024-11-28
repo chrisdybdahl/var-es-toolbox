@@ -39,7 +39,7 @@ if __name__ == '__main__':
     exit()
 
     backtesting_dir = project_dir / "src" / "var_es_toolbox" / "backtesting"
-    r_backtesting_path = backtesting_dir / "r_backtesting.R"
+    r_backtesting_path = backtesting_dir / "backtesting.R"
     robjects.globalenv['r_backtesting_path'] = str(r_backtesting_path)
     # robjects.r.source(str(r_models_path))
     robjects.r('''

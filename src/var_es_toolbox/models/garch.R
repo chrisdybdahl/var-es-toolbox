@@ -1,7 +1,7 @@
 library(rugarch)
 library(xts)
 
-forecast_u_GARCH_var <- function(data, c, n, m, p = 1, q = 1, r = 1, model = "sGARCH", dist = "norm", cluster = NULL) {
+forecast_u_GARCH <- function(data, c, n, m, p = 1, q = 1, r = 1, model = "sGARCH", dist = "norm", cluster = NULL) {
   # TODO: Can remove?
   df <- tail(data, n + m)
   data_xts <- xts(df$Return, order.by = df$Date)
@@ -19,7 +19,7 @@ forecast_u_GARCH_var <- function(data, c, n, m, p = 1, q = 1, r = 1, model = "sG
     window.size = m,
     refit.every = r,
     refit.window = 'moving',
-    calculate.VaR = TRUE,
+    calculate.VaR = FALSE, # TODO: Can be dropped if computed
     VaR.alpha = c,
     cluster = cluster
   )
@@ -64,7 +64,8 @@ forecast_u_GARCH_var <- function(data, c, n, m, p = 1, q = 1, r = 1, model = "sG
   dates <- tail(data$Date, n)
   VaR <- xts(as.numeric(var), order.by = dates, colnames = "VaR")
   ES <- xts(as.numeric(es), order.by = dates, colnames = "ES")
-  results_xts <- merge(VaR, ES)
+  VOL <- xts(as.numeric(sigmaFor), order.by = dates, colnames = "VOL")
+  results_xts <- merge(VaR, ES, VOL)
 
   return(results_xts)
 }

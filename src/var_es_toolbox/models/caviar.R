@@ -1,6 +1,6 @@
 library(DEoptim)
 
-forecast_u_CAViaR_var <- function(data, c, n, m, r = 10, var_model = "adaptive", es_model = "mult", itermax = 200, verbose = FALSE, lb = -10, ub = 10, loss_func = al_log_loss_function, loss_type = "mse") {
+forecast_u_CAViaR <- function(data, c, n, m, r = 10, var_model = "adaptive", es_model = "mult", itermax = 200, verbose = FALSE, lb = -10, ub = 10, loss_func = al_log_loss_function, loss_type = "mse") {
   # TODO: Fix how G is parsed to the adaptive model
   df <- tail(data$Return, n + m)
   var_func <- switch(var_model,
@@ -64,14 +64,10 @@ forecast_u_CAViaR_var <- function(data, c, n, m, r = 10, var_model = "adaptive",
       optim_function <- loss_func(window_xts, c, var_func, es_func, n_betas, loss_type = loss_type)
 
       # Record the parameters from last iteration
-      if (FALSE) {
-        control <- list(trace = verbose, itermax = itermax, initialpop = last_params)
-      } else {
-        control <- list(trace = verbose, itermax = itermax)
-      }
+      control <- list(trace = verbose, itermax = itermax)
 
       # Optimize the given loss function wrt. betas and gammas
-      result <- DEoptim(
+      result <- DEoptim::DEoptim(
         optim_function,
         lower = lower,
         upper = upper,
@@ -101,8 +97,8 @@ forecast_u_CAViaR_var <- function(data, c, n, m, r = 10, var_model = "adaptive",
     y_input <- c(window_xts[m], 0)
 
     es_output <- switch(es_model,
-                        "mult" = es_func(y_input, var_input, gammas),
-                        "ar" = es_func(y_input, var_input, gammas, x_input))
+                        "mult" = es_func(Q = var_input, gammas = gammas),
+                        "ar" = es_func(y = y_input, Q = var_input, gammas = gammas, x = x_input))
     es[i] <- es_output[2]
   }
 
@@ -116,7 +112,7 @@ forecast_u_CAViaR_var <- function(data, c, n, m, r = 10, var_model = "adaptive",
 }
 
 # ES-CAViaR using multiple of VaR, described by Taylor (2019)
-mult_ES <- function(y, Q, gammas, x = NULL) {
+mult_ES <- function(Q, gammas, ...) {
   gamma0 <- gammas[1]
   es <- (1 + exp(gamma0)) * Q
 
@@ -128,7 +124,6 @@ ar_ES <- function(y, Q, gammas, x = NULL) {
   gamma0 <- gammas[1]
   gamma1 <- gammas[2]
   gamma2 <- gammas[3]
-  t <- length(Q)
 
   calc_x <- function(y, Q, x, t, gamma0, gamma1, gamma2) {
     if (y[t - 1] <= Q[t - 1]) {
@@ -170,13 +165,14 @@ al_log_loss_function <- function(y, c, func_Q, func_ES, n_betas, loss_type = "me
     gammas <- params[(n_betas + 1):n_params]
 
     Q <- func_Q(y, c, betas)
-    ES <- func_ES(y, Q, gammas)
+    ES <- func_ES(y = y, Q = Q, gammas = gammas)
 
     # Calculate the loss vector
+    ES[ES >= 0] <- -1e-10
     loss_vector <- -log((c - 1) / ES) -
       ((y - Q) * (c - (y <= Q))) / (c * ES) # '+ y / ES' is omitted, Taylor showed this is still strictly consistent
 
-    # Handle NA or infinite values to prevent errors in optimization
+    # # Handle NA or infinite values to prevent errors in optimization
     loss_vector[is.na(loss_vector) | is.infinite(loss_vector)] <- 1e+10
 
     # Aggregate the loss based on the chosen method
@@ -192,7 +188,6 @@ al_log_loss_function <- function(y, c, func_Q, func_ES, n_betas, loss_type = "me
     return(total_loss)
   }
 }
-
 
 # Fissler and Ziegel (2016)
 # Strictly consistent scoring functions for jointly evaluating VaR and ES forecasts are on the following form
@@ -218,7 +213,7 @@ fz_general_score_function <- function(func_Q, func_ES, func_G1, func_G2, func_ze
   }
 }
 
-quantile_loss_function <- function(y, c, func) { # TODO: Check if need betas in argument
+quantile_loss_function <- function(y, c, func) {
   function(betas) {
     Q <- func(y, c, betas)
     res <- sum(c * abs(y - Q) * (y > Q)) + sum((1 - c) * abs(y - Q) * (y < Q))
@@ -277,7 +272,7 @@ IndirectGARCH <- function(y, c, betas) {
   return(var)
 }
 
-Adaptive <- function(y, c, betas, G = 1) {
+Adaptive <- function(y, c, betas, G = 10) {
   beta1 <- betas[1]
   var <- as.numeric(quantile(y, probs = c))
   var <- rep(var, length(y))

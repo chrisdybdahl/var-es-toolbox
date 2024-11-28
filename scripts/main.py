@@ -9,7 +9,7 @@ from rpy2.robjects import globalenv, r, pandas2ri
 
 project_dir = Path(__file__).resolve().parents[1]
 
-# TODO Fix that all r code returns in list(out1, out2, etc.) format
+# TODO: In all models, implement that ... send in args to underlying function
 
 if __name__ == '__main__':
     # Asset
@@ -25,11 +25,11 @@ if __name__ == '__main__':
 
     # Retrieve r model
     models_dir = project_dir / "src" / "var_es_toolbox" / "models"
-    r_arch_models_path = models_dir / "r_arch_models.R"
-    r_hybrid_evt_models_path = models_dir / "r_hybrid_evt_models.R"
-    r_non_param_path = models_dir / "non_parametric_models.R"
-    r_gas_models_path = models_dir / "r_gas_models.R"
-    r_caviar_models_path = models_dir / "r_caviar_models.R"
+    r_arch_models_path = models_dir / "garch.R"
+    r_hybrid_evt_models_path = models_dir / "hybrid_evt.R"
+    r_non_param_path = models_dir / "hs.R"
+    r_gas_models_path = models_dir / "gas.R"
+    r_caviar_models_path = models_dir / "caviar.R"
 
     globalenv['r_non_param_path'] = str(r_non_param_path)
     globalenv['r_arch_models_path'] = str(r_arch_models_path)
@@ -62,23 +62,23 @@ if __name__ == '__main__':
 
     # Initialize in R
     r('''
-    library(rugarch)
     library(xts)
     library(psych)
-    library(ggplot2)             
-    library(parallel)
+    library(ggplot2)
     
     names(df)[names(df) == asset] <- "Return"
+    dates <- tail(df$Date, n)
     returns <- xts(tail(df$Return, n), order.by = tail(df$Date, n))
     
     desc_stat <- psych::describe(df_all)
     print(desc_stat)
     
-    ggplot(df, aes(x=Date, y=Return)) +
+    gg <- ggplot(df, aes(x=Date, y=Return)) +
         geom_line(color="blue") +
         ggtitle("DBc1 Returns") +
         xlab("Date") +
         ylab("Return (%)")
+    print(gg)
            
     # Define the function for plotting returns, VaR, and ES
     plot_var_es <- function(dates, returns, var, es) {
@@ -105,13 +105,14 @@ if __name__ == '__main__':
         ) +
         scale_y_continuous(labels = scales::percent)
     }
+    Sys.sleep(10)
     ''')
 
     # Run VaR forecast
     r('''
-    source(r_caviar_models_path)
+    source(r_arch_models_path)
 
-    result <- forecast_u_CAViaR_var(df, c, n, m, r = 50, var_model = "adaptive", itermax = 20, verbose = TRUE)
+    result <- forecast_u_GARCH(df, c, n, m)
     
     var <- -result$VaR
     VaRplot(c, returns, var)
@@ -135,7 +136,7 @@ if __name__ == '__main__':
     #
     # # Retrieve backtest model
     # backtesting_dir = project_dir / "src" / "var_es_toolbox" / "backtesting"
-    # r_backtesting_path = backtesting_dir / "r_backtesting.R"
+    # r_backtesting_path = backtesting_dir / "backtesting.R"
     # r.source(str(r_backtesting_path))
     # backtest_er = r["backtest_er"]
     # backtest_er_result = backtest_er([0.1], [5], [4.5], [30], 1000)

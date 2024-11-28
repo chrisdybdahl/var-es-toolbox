@@ -9,19 +9,19 @@ fit_GARCH <- function(
   model = "sGARCH",
   dist = "norm",
   solver = "solnp",
-  solver.control = list(n.restarts = 1)
+  ...
 ) {
-  spec <- ugarchspec(
+  spec <- rugarch::ugarchspec(
     mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
     variance.model = list(garchOrder = c(p, q), model = model),
     distribution.model = dist
   )
 
-  fit <- ugarchfit(
+  fit <- rugarch::ugarchfit(
     spec = spec,
     data = data,
     solver = solver,
-    solver.control = solver.control
+    ...
   )
   sigma <- rugarch::sigma(fit)
   residuals <- rugarch::residuals(fit, standardize = TRUE)
@@ -31,7 +31,7 @@ fit_GARCH <- function(
 
 fit_POT_EVT <- function(residuals, c, t) {
   # Model the lower tail
-  residuals <- - residuals
+  residuals <- -residuals
 
   # Threshold selection
   u <- quantile(residuals, probs = t)
@@ -66,13 +66,13 @@ fit_POT_EVT <- function(residuals, c, t) {
     } else {
       var_evt <- NA
       es_evt <- NA
-      }
+    }
 
   }
   return(list(VaR_evt = var_evt, ES_evt = es_evt))
 }
 
-forecast_u_EVT_GARCH_var <- function(
+forecast_u_EVT_GARCH <- function(
   data,
   c,
   n,
@@ -83,13 +83,14 @@ forecast_u_EVT_GARCH_var <- function(
   model = "sGARCH",
   dist = "norm",
   solver = "solnp",
-  solver.control = list(n.restarts = 1)
+  ...
 ) {
   df <- tail(data, n + m)
   data_xts <- xts(df$Return, order.by = df$Date)
 
   var <- numeric(n)
   es <- numeric(n)
+  vol <- numeric(n)
   for (i in 1:n) {
     window_start <- i
     window_end <- m + i - 1
@@ -102,7 +103,7 @@ forecast_u_EVT_GARCH_var <- function(
       model = model,
       dist = dist,
       solver = solver,
-      solver.control = solver.control
+      ...
     )
 
     residuals <- garch_result$residuals
@@ -113,23 +114,26 @@ forecast_u_EVT_GARCH_var <- function(
     var_evt <- evt_result$VaR_evt
     es_evt <- evt_result$ES_evt
 
-    if (!is.na(var_evt)) {
-      warning("VaR_EVT, VaR before conditional volatility adjustment, was NA.")
+    if (!is.na(var_evt) & !is.na(es_evt)) {
       # TODO: Assume mu is zero
       var[i] <- sigmaFor * var_evt
       es[i] <- sigmaFor * es_evt
     } else {
+      warning("VaR_EVT or ES_EVT, VaR or ES before conditional volatility adjustment, was NA.")
       var[i] <- NA
       es[i] <- NA
     }
+
+    # Store the volatility forecast
+    vol[i] <- sigmaFor
   }
 
   # Create xts objects for VaR and ES
   dates <- tail(data$Date, n)
   VaR <- xts(as.numeric(var), order.by = dates, colnames = "VaR")
   ES <- xts(as.numeric(es), order.by = dates, colnames = "ES")
-  results_xts <- merge(VaR, ES)
-
+  VOL <- xts(as.numeric(vol), order.by = dates, colnames = "VOL")
+  results_xts <- merge(VaR, ES, VOL)
 
   return(results_xts)
 }

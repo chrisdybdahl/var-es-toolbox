@@ -1,17 +1,17 @@
 library(GAS)
 library(xts)
 
-forecast_u_GAS_var <- function(data, c, n, m, r = 1, dist = "norm", cluster = NULL) {
+forecast_u_GAS <- function(data, c, n, m, r = 1, dist = "norm", cluster = NULL) {
   df <- tail(data, n + m)
   data_xts <- xts(df$Return, order.by = df$Date)
 
-  GASSpec <- UniGASSpec(
+  GASSpec <- GAS::UniGASSpec(
     Dist = dist,
     ScalingType = "Identity",
     GASPar = list(scale = TRUE)
   )
 
-  gas_roll <- UniGASRoll(
+  gas_roll <- GAS::UniGASRoll(
     data = data_xts,
     GASSpec = GASSpec,
     ForecastLength = n,
@@ -21,7 +21,7 @@ forecast_u_GAS_var <- function(data, c, n, m, r = 1, dist = "norm", cluster = NU
   )
 
   muFor <- gas_roll@Forecast$PointForecast$location
-  sigmaFor <- gas_rsoll@Forecast$PointForecast$scale
+  sigmaFor <- gas_roll@Forecast$PointForecast$scale
 
   # Assume mean is zero
   # TODO: Assume mean is zero, have option?
