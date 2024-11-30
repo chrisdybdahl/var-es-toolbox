@@ -12,6 +12,18 @@ run_kc_backtest <- function(actual, VaR, alpha) {
   ))
 }
 
+# Christoffersen and Pelletier (2004)
+# TODO: Remember the following note
+# Following Christoffersen and Pelletier (2004), the Weibull distribution is used with parameter ‘b=1’ representing the
+# case of the exponential. A future release will include the choice of using a bootstrap method to evaluate the p-value,
+# and until then care should be taken when evaluating series of length less than 1000 as a rule of thumb.
+run_vdt_backtest <- function(actual, VaR, alpha) {
+  result <- rugarch::VaRDurTest(alpha = alpha, actual = actual, VaR = VaR)
+  return(list(
+    VDT = result$LRp
+  ))
+}
+
 # McNeil and Frey (2000) test
 run_er_backtest <- function(actual, VaR, ES, vol = NULL, b = 1000) {
   result <- esback::er_backtest(r = actual, q = VaR, e = ES, s = vol, B = b)
@@ -57,6 +69,12 @@ run_backtests <- function(actual, VaR, ES, alpha, prefix, VOL = NULL, b = 1000) 
     "CC" = kc_results$CC
   )
 
+  # Christoffersen and Pelletier (2004) backtest
+  vdt_pvalue <- run_vdt_backtest(actual = actual, VaR = VaR, alpha = alpha)
+  VDT_df <- data.frame(
+    "VDT" = vdt_pvalue
+  )
+
   # McNeil and Frey (2000) backtest
   er_pvalue <- run_er_backtest(actual = actual, VaR = VaR, ES = ES, vol = VOL, b = b)
   ER_df <- data.frame(
@@ -84,7 +102,7 @@ run_backtests <- function(actual, VaR, ES, alpha, prefix, VOL = NULL, b = 1000) 
   )
 
   # Combine all results into a single dataframe
-  results <- cbind(KC_df, ER_df, ER_df_2, COC_df, ESR_df)
+  results <- cbind(KC_df, VDT_df, ER_df, ER_df_2, COC_df, ESR_df)
   row.names(results) <- prefix
 
   return(results)

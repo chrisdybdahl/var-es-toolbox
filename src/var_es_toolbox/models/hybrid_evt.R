@@ -20,8 +20,7 @@ fit_GARCH <- function(
   fit <- rugarch::ugarchfit(
     spec = spec,
     data = data,
-    solver = solver,
-    ...
+    solver = solver
   )
   sigma <- rugarch::sigma(fit)
   residuals <- rugarch::residuals(fit, standardize = TRUE)
@@ -29,7 +28,7 @@ fit_GARCH <- function(
   return(list(residuals = residuals, sigma = sigma, fit = fit))
 }
 
-fit_POT_EVT <- function(residuals, c, t) {
+fit_POT_EVT <- function(residuals, c, t, ...) {
   # Model the lower tail
   residuals <- -residuals
 
@@ -37,31 +36,31 @@ fit_POT_EVT <- function(residuals, c, t) {
   u <- quantile(residuals, probs = t)
 
   # Calculate exceedances with a time-series framework
-  exceedances <- (residuals - u) * (residuals > u)
+  # exceedances <- (residuals - u) * (residuals > u)
 
   # Calculate exceedances with a marked point process framework
-  # exceedances <- residuals[residuals > u] - u
+  n_u <- length(residuals[residuals > u])
 
-  if (length(exceedances[exceedances > 0]) < 5) {
+  if (n_u < 5) {
     warning("Not enough exceedances for EVT fitting. Skipping EVT adjustment.")
     var_evt <- NA
+    es_evt <- NA
   } else {
-    # Fit the Generalized Pareto Distribution
-    evt_fit <- evir::gpd(exceedances, threshold = u)
+    # Fit the Generalized Pareto Distribution, here the gpd function is filtering and substracting based on u
+    evt_fit <- evir::gpd(residuals, threshold = u)
     xi <- evt_fit$par.ests["xi"]
     beta <- evt_fit$par.ests["beta"]
 
     # EVT quantile adjustment
     N <- length(residuals)
-    n_u <- length(exceedances)
 
     # Using Pickands-Balkema-de Haan Extreme Value Theorem (Balkema & de Haan, 1974) we can derive VaR for GPD
     # From Hull (2018) we have a definition for ES for GPD
     if (xi != 0) {
-      var_evt <- u + (beta / xi) * (((N / n_u) * (1 - c))^(-xi) - 1)
+      var_evt <- u + (beta / xi) * (((N / n_u) * c)^(-xi) - 1)
       es_evt <- (var_evt + beta - u * xi) / (1 - xi)
     } else if (xi == 0) {
-      var_evt <- u - beta * log((N / n_u) * (1 - c))
+      var_evt <- u - beta * log((N / n_u) * c)
       es_evt <- var_evt + beta
     } else {
       var_evt <- NA
@@ -109,7 +108,7 @@ forecast_u_EVT_GARCH <- function(
     residuals <- garch_result$residuals
     sigmaFor <- tail(garch_result$sigma, 1)
 
-    evt_result <- fit_POT_EVT(residuals, c, t)
+    evt_result <- fit_POT_EVT(residuals, c, t, ...)
 
     var_evt <- evt_result$VaR_evt
     es_evt <- evt_result$ES_evt

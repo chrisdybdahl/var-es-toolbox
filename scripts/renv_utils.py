@@ -3,10 +3,10 @@ from pathlib import Path
 
 import rpy2.situation as rsetup
 
+project_dir = Path(__file__).resolve().parents[1]
+os.environ["HOME"] = str(project_dir)
 os.environ["R_HOME"] = rsetup.get_r_home()
 from rpy2.robjects import pandas2ri, r, globalenv
-
-project_dir = Path(__file__).resolve().parents[1]
 
 
 def init_renv(show_diagnose=False):

@@ -65,21 +65,21 @@ if __name__ == '__main__':
     library(xts)
     library(psych)
     library(ggplot2)
-    
+
     names(df)[names(df) == asset] <- "Return"
     dates <- tail(df$Date, n)
     returns <- xts(tail(df$Return, n), order.by = tail(df$Date, n))
-    
+
     desc_stat <- psych::describe(df_all)
     print(desc_stat)
-    
+
     gg <- ggplot(df, aes(x=Date, y=Return)) +
         geom_line(color="blue") +
         ggtitle("DBc1 Returns") +
         xlab("Date") +
         ylab("Return (%)")
     print(gg)
-           
+
     # Define the function for plotting returns, VaR, and ES
     plot_var_es <- function(dates, returns, var, es) {
       # Create a data frame for plotting
@@ -89,7 +89,7 @@ if __name__ == '__main__':
         VaR = var,
         ES = es
       )
-      
+
       # Generate the plot using ggplot2
       ggplot(plot_data, aes(x = Date)) +
         geom_line(aes(y = Return), color = "blue", linewidth = 0.7, alpha = 0.8) +    # Actual returns
@@ -113,14 +113,14 @@ if __name__ == '__main__':
     source(r_arch_models_path)
 
     result <- forecast_u_GARCH(df, c, n, m)
-    
+
     var <- -result$VaR
     VaRplot(c, returns, var)
     print(VaRTest(c, returns, var))
-    
+
     es <- -result$ES
     print(ESTest(c, returns, es, var))
-    
+
     plot_var_es(dates, returns, var, es)
     ''')
 
