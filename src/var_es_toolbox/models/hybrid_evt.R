@@ -2,137 +2,119 @@ library(rugarch)
 library(xts)
 library(evir)
 
-fit_GARCH <- function(
+forecast_u_EVT_GARCH <- function(
   data,
+  c,
+  n,
+  m,
   p = 1,
   q = 1,
+  r = 1,
+  t = 0.9,
   model = "sGARCH",
   dist = "norm",
-  solver = "solnp",
+  min_exceedances = 5,
   ...
 ) {
+  df <- tail(data, n + m)
+  data_xts <- xts::xts(df$Return, order.by = df$Date)
+
   spec <- rugarch::ugarchspec(
     mean.model = list(armaOrder = c(0, 0), include.mean = FALSE),
     variance.model = list(garchOrder = c(p, q), model = model),
     distribution.model = dist
   )
 
-  fit <- rugarch::ugarchfit(
-    spec = spec,
-    data = data,
-    solver = solver
-  )
-  sigma <- rugarch::sigma(fit)
-  residuals <- rugarch::residuals(fit, standardize = TRUE)
+   # Initialize storage for results
+  var <- matrix(NA, nrow = n, ncol = length(c), dimnames = list(NULL, paste0("VaR_", c)))
+  es <- matrix(NA, nrow = n, ncol = length(c), dimnames = list(NULL, paste0("ES_", c)))
 
-  return(list(residuals = residuals, sigma = sigma, fit = fit))
-}
-
-fit_POT_EVT <- function(residuals, c, t, ...) {
-  # Model the lower tail
-  residuals <- -residuals
-
-  # Threshold selection
-  u <- quantile(residuals, probs = t)
-
-  # Calculate exceedances with a time-series framework
-  # exceedances <- (residuals - u) * (residuals > u)
-
-  # Calculate exceedances with a marked point process framework
-  n_u <- length(residuals[residuals > u])
-
-  if (n_u < 5) {
-    warning("Not enough exceedances for EVT fitting. Skipping EVT adjustment.")
-    var_evt <- NA
-    es_evt <- NA
-  } else {
-    # Fit the Generalized Pareto Distribution, here the gpd function is filtering and substracting based on u
-    evt_fit <- evir::gpd(residuals, threshold = u)
-    xi <- evt_fit$par.ests["xi"]
-    beta <- evt_fit$par.ests["beta"]
-
-    # EVT quantile adjustment
-    N <- length(residuals)
-
-    # Using Pickands-Balkema-de Haan Extreme Value Theorem (Balkema & de Haan, 1974) we can derive VaR for GPD
-    # From Hull (2018) we have a definition for ES for GPD
-    if (xi != 0) {
-      var_evt <- u + (beta / xi) * (((N / n_u) * c)^(-xi) - 1)
-      es_evt <- (var_evt + beta - u * xi) / (1 - xi)
-    } else if (xi == 0) {
-      var_evt <- u - beta * log((N / n_u) * c)
-      es_evt <- var_evt + beta
-    } else {
-      var_evt <- NA
-      es_evt <- NA
-    }
-
-  }
-  return(list(VaR_evt = var_evt, ES_evt = es_evt))
-}
-
-forecast_u_EVT_GARCH <- function(
-  data,
-  c,
-  n,
-  m,
-  t = 0.95,
-  p = 1,
-  q = 1,
-  model = "sGARCH",
-  dist = "norm",
-  solver = "solnp",
-  ...
-) {
-  df <- tail(data, n + m)
-  data_xts <- xts(df$Return, order.by = df$Date)
-
-  var <- numeric(n)
-  es <- numeric(n)
   vol <- numeric(n)
+  xi <- NA
+  beta <- NA
   for (i in 1:n) {
     window_start <- i
     window_end <- m + i - 1
-    window_xts <- data_xts[window_start:window_end]
+    window <- data_xts[window_start:window_end]
 
-    garch_result <- fit_GARCH(
-      window_xts,
-      p = p,
-      q = q,
-      model = model,
-      dist = dist,
-      solver = solver,
+    fit <- rugarch::ugarchfit(
+      spec = spec,
+      data = window,
       ...
     )
 
-    residuals <- garch_result$residuals
-    sigmaFor <- tail(garch_result$sigma, 1)
+    vol[i] <- rugarch::sigma(fit)[m]
 
-    evt_result <- fit_POT_EVT(residuals, c, t, ...)
+    # Reparametrize for every r period
+    if (i %% r == 0 || i == 1) {
+      std_res <- rugarch::residuals(fit, standardize = TRUE)
 
-    var_evt <- evt_result$VaR_evt
-    es_evt <- evt_result$ES_evt
+      # Threshold selection
+      u <- quantile(std_res, probs = t)
 
-    if (!is.na(var_evt) & !is.na(es_evt)) {
-      # TODO: Assume mu is zero
-      var[i] <- sigmaFor * var_evt
-      es[i] <- sigmaFor * es_evt
-    } else {
-      warning("VaR_EVT or ES_EVT, VaR or ES before conditional volatility adjustment, was NA.")
-      var[i] <- NA
-      es[i] <- NA
+      # Calculate exceedances with a marked point process framework
+      n_u <- length(std_res[std_res > u])
+
+      if (n_u >= min_exceedances) {
+        # Fit the Generalized Pareto Distribution with tryCatch
+        evt_fit <- tryCatch({
+          evir::gpd(std_res, threshold = u, method = "ml")
+        }, error = function(e) {
+          warning("GPD fitting failed: ", e$message)
+          return(NULL)
+        })
+
+        if (!is.null(evt_fit)) {
+          # Extract parameters if fitting was successful
+          xi <- evt_fit$par.ests["xi"]
+          beta <- evt_fit$par.ests["beta"]
+        } else {
+          # Handle failed fitting
+          warning("GPD fitting was not successful, setting parameters to last value.")
+          xi <- x1
+          beta <- beta
+        }
+      } else {
+        warning("Not enough exceedances for EVT fitting. Skipping EVT adjustment.")
+        xi <- x1
+        beta <- beta
+      }
     }
 
-    # Store the volatility forecast
-    vol[i] <- sigmaFor
+    if (!any(is.na(c(xi, beta, m / n_u)))) {
+      # Using Pickands-Balkema-de Haan Extreme Value Theorem (Balkema & de Haan, 1974) we can derive VaR for GPD
+      # From Hull (2018) we have a definition for ES for GPD
+
+      var_evt <- ifelse(
+        xi != 0,
+        u + (beta / xi) * (((m / n_u) * c)^(-xi) - 1),
+        u - beta * log((m / n_u) * c)
+      )
+
+      es_evt <- ifelse(
+        xi != 0,
+        (var_evt + beta - u * xi) / (1 - xi),
+        var_evt + beta
+      )
+
+      # Store results for each confidence level
+      var[i, ] <- vol[i] * var_evt
+      es[i, ] <- vol[i] * es_evt
+    } else {
+      warning("xi, beta, or m / n_u was NA for confidence level ", conf)
+      var[i, ] <- NA
+      es[i, ] <- NA
+    }
   }
 
   # Create xts objects for VaR and ES
   dates <- tail(data$Date, n)
-  VaR <- xts(as.numeric(var), order.by = dates, colnames = "VaR")
-  ES <- xts(as.numeric(es), order.by = dates, colnames = "ES")
-  VOL <- xts(as.numeric(vol), order.by = dates, colnames = "VOL")
-  results_xts <- merge(VaR, ES, VOL)
+  VaR_xts <- xts::xts(var, order.by = dates)
+  ES_xts <- xts::xts(es, order.by = dates)
+  VOL <- xts::xts(vol, order.by = dates, colnames = "VOL")
+
+  # Merge results
+  results_xts <- merge(VaR_xts, ES_xts, VOL)
 
   return(results_xts)
 }

@@ -10,6 +10,8 @@ project_dir = Path(__file__).resolve().parents[1]
 
 if __name__ == '__main__':
     r('''
+    # renv::install("C:/Users/chris/RStudioProjects/caviar")
+    renv::install("segMGarch")
     # library(Rcpp)
     # cppFunction("int add(int x, int y) { return x + y; }")
     # x <- add(1, 2)  # Should return 3

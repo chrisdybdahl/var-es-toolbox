@@ -51,12 +51,11 @@ forecast_u_CAViaR <- function(
   # TODO: Change add some checks
   # TODO: Check if ES calculation is correct
 
-  Rcpp.package.skeleton("caviar")
-  sourceCpp(paste0(curr_dir, "/", var_model, ".cpp"))
+  sourceCpp(paste0(curr_dir, "/" , var_model, ".cpp"))
 
   # Initialize variables for var_model
   if (var_model == "ADAPTIVE") {
-    var_func <- adaptive_C
+    var_func <- Adaptive_C
     n_betas <- 1
     lower_beta <- lb
   } else if (var_model == "SAV") {

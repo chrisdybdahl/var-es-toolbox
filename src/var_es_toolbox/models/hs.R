@@ -11,10 +11,10 @@ forecast_u_HS <- function(data, c, n, m) {
                   nout = n,
                   nwin = m
   )
-  VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")
-  ES <- xts(res$ES, order.by = tail(data$Date, n), colnames = "ES")
+  VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = paste0("VaR_", c))
+  ES <- xts(res$ES, order.by = tail(data$Date, n), colnames = paste0("ES_", c))
   results_xts <- merge(VaR, ES)
-  
+
   return(results_xts)
 }
 
@@ -44,15 +44,15 @@ forecast_u_FHS_EWMA <- function(data, c, n, m, lambda = 0.94, b = 10000) {
     vol_forecast[i] <- sqrt(ewma_var[length(ewma_var)])  # Forecast volatility
   }
 
-  VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")
-  ES <- xts(res$ES, order.by = tail(data$Date, n), colnames = "ES")
-  VOL <- xts(vol_forecast, order.by = tail(data$Date, n), colnames = "VOL")
+  VaR <- xts::xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")
+  ES <- xts::xts(res$ES, order.by = tail(data$Date, n), colnames = "ES")
+  VOL <- xts::xts(vol_forecast, order.by = tail(data$Date, n), colnames = "VOL")
   results_xts <- merge(VaR, ES, VOL)
   
   return(results_xts)
 }
 
-forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model = "sGARCH", dist = "norm", cluster = NULL) {
+forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model = "sGARCH", dist = "norm", ...) {
   df <- tail(data$Return, n + m)
 
   mean.model <- list(armaOrder = c(0, 0), include.mean = FALSE)
@@ -83,9 +83,8 @@ forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model =
     forecast.length = n,
     window.size = m,
     refit.every = 1, # Since rollcast is implemented by refitting every period
-    refit.window = 'moving',
-    calculate.VaR = FALSE,
-    cluster = cluster
+    refit.window = "moving",
+    calculate.VaR = FALSE
   )
 
   VaR <- xts(res$VaR, order.by = tail(data$Date, n), colnames = "VaR")

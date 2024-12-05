@@ -13,7 +13,7 @@ project_dir = Path(__file__).resolve().parents[1]
 
 if __name__ == '__main__':
     # Asset
-    asset = "DPc1_return"
+    asset = "DEBQc1_return"
     globalenv["asset"] = str(asset)
 
     # Retrieve data
@@ -25,17 +25,20 @@ if __name__ == '__main__':
 
     # Retrieve r model
     models_dir = project_dir / "src" / "var_es_toolbox" / "models"
-    r_arch_models_path = models_dir / "garch.R"
-    r_hybrid_evt_models_path = models_dir / "hybrid_evt.R"
-    r_non_param_path = models_dir / "hs.R"
-    r_gas_models_path = models_dir / "gas.R"
-    r_caviar_models_path = models_dir / "caviar.R"
+    backtest_dir = project_dir / "src" / "var_es_toolbox" / "backtesting"
+    hs_path = models_dir / "hs.R"
+    garch_path = models_dir / "garch.R"
+    gas_path = models_dir / "gas.R"
+    hybrid_evt_path = models_dir / "hybrid_evt.R"
+    caviar_path = models_dir / "caviar" / "caviar.R"
+    backtest_path = backtest_dir / "backtesting.R"
 
-    globalenv['r_non_param_path'] = str(r_non_param_path)
-    globalenv['r_arch_models_path'] = str(r_arch_models_path)
-    globalenv['r_hybrid_evt_models_path'] = str(r_hybrid_evt_models_path)
-    globalenv['r_gas_models_path'] = str(r_gas_models_path)
-    globalenv['r_caviar_models_path'] = str(r_caviar_models_path)
+    globalenv['hs_path'] = str(hs_path)
+    globalenv['garch_path'] = str(garch_path)
+    globalenv['gas_path'] = str(gas_path)
+    globalenv['hybrid_evt_path'] = str(hybrid_evt_path)
+    globalenv['caviar_path'] = str(caviar_path)
+    globalenv['backtest_path'] = str(backtest_path)
 
     # r.source(str(r_arch_models_path))
     # r.source(str(r_hybrid_evt_models_path))
@@ -47,7 +50,7 @@ if __name__ == '__main__':
     t = 0.95
     p = 1
     q = 1
-    m = 1000
+    m = 500
     n = 200
     refit = 10
 
@@ -63,23 +66,17 @@ if __name__ == '__main__':
     # Initialize in R
     r('''
     library(xts)
+    library(rugarch)
     library(psych)
-    library(ggplot2)
-
+    library(ggplot2)             
+    
     names(df)[names(df) == asset] <- "Return"
     dates <- tail(df$Date, n)
-    returns <- xts(tail(df$Return, n), order.by = tail(df$Date, n))
-
+    returns <- xts(tail(df$Return, n), order.by = dates)
+    
     desc_stat <- psych::describe(df_all)
     print(desc_stat)
-
-    gg <- ggplot(df, aes(x=Date, y=Return)) +
-        geom_line(color="blue") +
-        ggtitle("DBc1 Returns") +
-        xlab("Date") +
-        ylab("Return (%)")
-    print(gg)
-
+    
     # Define the function for plotting returns, VaR, and ES
     plot_var_es <- function(dates, returns, var, es) {
       # Create a data frame for plotting
@@ -89,12 +86,12 @@ if __name__ == '__main__':
         VaR = var,
         ES = es
       )
-
-      # Generate the plot using ggplot2
+      
+      # Generate the plot using ggplot2 with labels
       ggplot(plot_data, aes(x = Date)) +
-        geom_line(aes(y = Return), color = "blue", linewidth = 0.7, alpha = 0.8) +    # Actual returns
-        geom_line(aes(y = VaR), color = "red", linetype = "dashed", linewidth = 0.7) + # VaR
-        geom_line(aes(y = ES), color = "darkorange", linetype = "dotted", linewidth = 0.7) + # ES
+        geom_line(aes(y = Return, color = "Return"), linewidth = 0.7, alpha = 0.8) +    # Actual returns
+        geom_line(aes(y = VaR, color = "VaR"), linetype = "dashed", linewidth = 0.7) + # VaR
+        geom_line(aes(y = ES, color = "ES"), linetype = "dotted", linewidth = 0.7) +   # ES
         ggtitle("Actual Returns vs. VaR and ES") +
         xlab("Date") +
         ylab("Returns / VaR / ES") +
@@ -103,25 +100,27 @@ if __name__ == '__main__':
           plot.title = element_text(hjust = 0.5),
           legend.position = "top"
         ) +
-        scale_y_continuous(labels = scales::percent)
+        scale_color_manual(values = c("Return" = "blue", "VaR" = "red", "ES" = "darkorange")) +
+        scale_y_continuous(labels = scales::percent) +
+        labs(color = "Legend")
     }
-    Sys.sleep(10)
     ''')
 
     # Run VaR forecast
     r('''
-    source(r_arch_models_path)
+    source(caviar_path)
+    source(backtest_path)
 
-    result <- forecast_u_GARCH(df, c, n, m)
-
+    result <- forecast_u_CAViaR(df, c, n, m, r = 100, var_model = "ADAPTIVE", es_model="AR")
+    
     var <- -result$VaR
     VaRplot(c, returns, var)
-    print(VaRTest(c, returns, var))
 
     es <- -result$ES
-    print(ESTest(c, returns, es, var))
+    print(plot_var_es(dates, returns, var, es))
 
-    plot_var_es(dates, returns, var, es)
+    vol <- result$VOL
+    run_backtests(returns, var, es, c, prefix = "CAVIAR")
     ''')
 
     # r('''renv::install("evir")''')
