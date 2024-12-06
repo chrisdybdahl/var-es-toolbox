@@ -155,10 +155,8 @@ custom_loss <- function(returns, VaR, ES, c) {
   return(loss_vector)
 }
 
-compute_losses_and_backtests <- function(df, models, c, n, m, b = 1000) {
-  losses <- matrix(nrow = n, ncol = length(models))
-  colnames(losses) <- names(models)
-
+compute_losses_and_backtests <- function(df, models, c_levels, n, m, b = 1000) {
+  # Initialize a data frame with NA values for all expected outputs
   backtest_template <- data.frame(
     ExpectedExceedances = NA,
     ActualExceedances = NA,
@@ -176,65 +174,99 @@ compute_losses_and_backtests <- function(df, models, c, n, m, b = 1000) {
     ESR3 = NA
   )
 
-  backtest_results <- list()
+  # Initialize lists to store results
+  losses_list <- list()
   predictions <- list()
+  backtest_results <- list()
 
+  # Loop through each model
   for (model_name in names(models)) {
     print(paste("Running model:", model_name))
 
-    # Handle errors during forecasting
-    forecast <- tryCatch(
-      models[[model_name]](df, c, n, m),
+    # Run the model and handle errors
+    model_forecasts <- tryCatch(
+      models[[model_name]](df, c_levels, n, m),
       error = function(e) {
         message(paste("Model", model_name, "failed:", e$message))
         return(NULL)
       }
     )
 
-    if (!is.null(forecast)) {
-      # Extract VaR and ES
-      VaR <- -forecast$VaR
-      ES <- -forecast$ES
-      predictions[[model_name]] <- list(VaR = VaR, ES = ES)
+    if (!is.null(model_forecasts)) {
+      # Ensure the forecasts are in matrix format
+      model_forecasts <- as.matrix(model_forecasts)
 
-      # Calculate losses
-      losses[, model_name] <- tryCatch(
-        custom_loss(tail(df$Return, n), VaR, ES, c),
-        error = function(e) {
-          message(paste("Loss computation failed for model", model_name, ":", e$message))
-          return(rep(NA, n))
-        }
+      # Extract column indices for VaR and ES based on confidence levels
+      var_cols <- grep("^VaR_", colnames(model_forecasts))
+      es_cols <- grep("^ES_", colnames(model_forecasts))
+
+      if (length(var_cols) != length(c_levels) || length(es_cols) != length(c_levels)) {
+        stop("Mismatch between confidence levels and forecast columns.")
+      }
+
+      # Store predictions
+      predictions[[model_name]] <- list(
+        VaR = model_forecasts[, var_cols, drop = FALSE],
+        ES = model_forecasts[, es_cols, drop = FALSE]
       )
 
-      # Run backtests
-      backtest_results[[model_name]] <-
-        run_backtests(
-          actual = tail(df$Return, n),
-          VaR = VaR,
-          ES = ES,
-          alpha = c,
-          prefix = model_name,
-          VOL = if ("VOL" %in% colnames(forecast)) forecast$VOL else NULL,
-          b = b
+      # Loop through each confidence level
+      for (c_idx in seq_along(c_levels)) {
+        c <- c_levels[c_idx]
+
+        # Extract VaR and ES columns for this confidence level
+        VaR_col <- -model_forecasts[, var_cols[c_idx]]
+        ES_col <- -model_forecasts[, es_cols[c_idx]]
+
+        # Compute losses
+        losses_list[[paste0(model_name, "_", c)]] <- tryCatch(
+          custom_loss(tail(df$Return, n), VaR_col, ES_col, c),
+          error = function(e) {
+            message(paste("Loss computation failed for", model_name, "and confidence level", c, ":", e$message))
+            return(rep(NA, n))
+          }
         )
+
+        # Run backtests
+        backtest_results[[paste0(model_name, "_", c)]] <- tryCatch(
+          run_backtests(
+            actual = tail(df$Return, n),
+            VaR = VaR_col,
+            ES = ES_col,
+            alpha = c,
+            prefix = paste0(model_name, "_", c),
+            b = b
+          ),
+          error = function(e) {
+            message(paste("Backtest failed for", model_name, "and confidence level", c, ":", e$message))
+            return(backtest_template)
+          }
+        )
+
+        # backtest_results[[paste0(model_name, "_", c)]]$AverageLoss <-
+
+      }
     } else {
-      # Fill in placeholders for failed models
-      losses[, model_name] <- NA
-      backtest_results[[model_name]] <- backtest_template
-      predictions[[model_name]] <- list(VaR = NA, ES = NA)
+      # Handle failed models
+      for (c in c_levels) {
+        losses_list[[paste0(model_name, "_", c)]] <- rep(NA, n)
+        backtest_results[[paste0(model_name, "_", c)]] <- backtest_template
+      }
     }
   }
 
-  print(backtest_results)
+  # Combine losses into a matrix
+  losses <- do.call(cbind, losses_list)
 
   # Combine all backtest results into a single dataframe
   backtest_df <- do.call(rbind, backtest_results)
 
-  # Calculate average loss for each model
-  avg_losses <- apply(losses, 2, function(x) if (all(is.na(x))) NA else mean(x, na.rm = TRUE))
+  # Compute average losses for each model-confidence level combination
+  avg_losses <- sapply(names(losses_list), function(loss_name) {
+    mean(losses_list[[loss_name]], na.rm = TRUE)
+  })
 
-  # Add average losses as a column to backtest_df
-  # backtest_df$AverageLoss <- avg_losses[match(rownames(backtest_df), names(avg_losses))]
+  # Map the average losses back to the corresponding rows in the backtest dataframe
   backtest_df$AverageLoss <- avg_losses[rownames(backtest_df)]
 
   return(list(
@@ -244,3 +276,54 @@ compute_losses_and_backtests <- function(df, models, c, n, m, b = 1000) {
   ))
 }
 
+# Function to perform MCS test for each confidence level
+perform_mcs_test_by_confidence <- function(losses, alpha, nboot) {
+  # Extract unique confidence levels from column names
+  confidence_levels <- unique(gsub(".*_(0\\.[0-9]+)$", "\\1", colnames(losses)))
+
+  # Initialize a list to store MCS results
+  mcs_results_list <- list()
+
+  # Perform MCS test for each confidence level
+  for (conf_level in confidence_levels) {
+    print(paste("Performing MCS test for confidence level:", conf_level))
+
+    # Subset the losses matrix for the current confidence level
+    conf_losses <- losses[, grep(paste0("_", conf_level, "$"), colnames(losses))]
+
+    # Remove columns with all NA values
+    conf_losses <- conf_losses[, colSums(is.na(conf_losses)) < nrow(conf_losses)]
+
+    # Replace remaining NA values with a large penalty
+    conf_losses[is.na(conf_losses)] <- 1e6
+
+    # Run the MCS test
+    mcs_result <- tryCatch(
+      rugarch::mcsTest(conf_losses, alpha = alpha, nboot = nboot, boot = "stationary"),
+      error = function(e) {
+        message(paste("MCS test failed for confidence level", conf_level, ":", e$message))
+        return(NULL)
+      }
+    )
+
+    if (!is.null(mcs_result)) {
+      # Add model names for included and excluded results
+      includedR_names <- colnames(conf_losses)[mcs_result$includedR]
+      excludedR_names <- if (!is.null(mcs_result$excludedR)) colnames(conf_losses)[mcs_result$excludedR] else NULL
+
+      includedSQ_names <- colnames(conf_losses)[mcs_result$includedSQ]
+      excludedSQ_names <- if (!is.null(mcs_result$excludedSQ)) colnames(conf_losses)[mcs_result$excludedSQ] else NULL
+
+      # Append names to the result
+      mcs_result$includedR_names <- includedR_names
+      mcs_result$excludedR_names <- excludedR_names
+      mcs_result$includedSQ_names <- includedSQ_names
+      mcs_result$excludedSQ_names <- excludedSQ_names
+    }
+
+    # Store the result
+    mcs_results_list[[conf_level]] <- mcs_result
+  }
+
+  return(mcs_results_list)
+}

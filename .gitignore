@@ -14,3 +14,4 @@ __pychache__/
 # Linter
 /.ruff_cache/
 .pre-commit-config.yaml
+*.csv

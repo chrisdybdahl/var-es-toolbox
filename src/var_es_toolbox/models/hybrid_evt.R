@@ -112,8 +112,6 @@ forecast_u_EVT_GARCH <- function(
   VaR_xts <- xts::xts(var, order.by = dates)
   ES_xts <- xts::xts(es, order.by = dates)
   VOL <- xts::xts(vol, order.by = dates, colnames = "VOL")
-
-  # Merge results
   results_xts <- merge(VaR_xts, ES_xts, VOL)
 
   return(results_xts)

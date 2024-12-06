@@ -49,7 +49,6 @@ forecast_u_CAViaR <- function(
 ) {
   # TODO: Fix how G is parsed to the adaptive model
   # TODO: Change add some checks
-  # TODO: Check if ES calculation is correct
 
   sourceCpp(paste0(curr_dir, "/" , var_model, ".cpp"))
 
