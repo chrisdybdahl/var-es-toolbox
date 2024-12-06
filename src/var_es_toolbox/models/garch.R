@@ -32,31 +32,32 @@ forecast_u_GARCH <- function(
     ...
   )
 
-  muFor <- garch_roll@forecast$density$Mu
   sigmaFor <- garch_roll@forecast$density$Sigma
 
   # Assume mean is zero
-  # TODO: Assume mean is zero, have option?
-  muFor <- 0
-
+  # TODO: Assume mean is zero
   if (dist == "norm") {
     quantile <- stats::qnorm(c)
     pdf_value <- stats::dnorm(quantile)
-    es <- -(muFor - sigmaFor %*% t(pdf_value / c))
-    var <- -(muFor + sigmaFor %*% t(quantile))
+    es <- -sigmaFor * (pdf_value / c)
+    var <- -sigmaFor * (quantile)
   } else if (dist == "std") {
     shapeFor <- garch_roll@forecast$density$Shape
     quantile <- sapply(c, function(conf) rugarch::qdist("std", p = conf, mu = 0, sigma = 1, shape = shapeFor))
-    pdf_value <- sapply(c, function(conf, q) rugarch::ddist("std", q, mu = 0, sigma = 1, shape = shapeFor), quantile)
-    es <- -(muFor - sigmaFor %*% t((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c)))
-    var <- -(muFor + sigmaFor %*% t(quantile))
+    pdf_value <- sapply(c, function(conf) rugarch::ddist("std", quantile[, which(c == conf)], mu = 0, sigma = 1, shape = shapeFor))
+    quantile <- quantile[1:n, , drop = FALSE]
+    pdf_value <- pdf_value[1:n, , drop = FALSE]
+    es <- -sigmaFor * ((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c))
+    var <- -sigmaFor * (quantile)
   } else if (dist == "sstd") {
     shapeFor <- garch_roll@forecast$density$Shape
     skewFor <- garch_roll@forecast$density$Skew
     quantile <- sapply(c, function(conf) rugarch::qdist("sstd", p = conf, mu = 0, sigma = 1, skew = skewFor, shape = shapeFor))
-    pdf_value <- sapply(c, function(conf, q) rugarch::ddist("sstd", q, mu = 0, sigma = 1, skew = skewFor, shape = shapeFor), quantile)
-    es <- -(muFor - sigmaFor %*% t((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c)))
-    var <- -(muFor + sigmaFor %*% t(quantile))
+    pdf_value <- sapply(c, function(conf) rugarch::ddist("sstd", quantile[, which(c == conf)], mu = 0, sigma = 1, skew = skewFor, shape = shapeFor))
+    quantile <- quantile[1:n, , drop = FALSE]
+    pdf_value <- pdf_value[1:n, , drop = FALSE]
+    es <- -sigmaFor * ((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c))
+    var <- -sigmaFor * (quantile)
   } else {
     stop("Unsupported distribution type. Use 'norm', 'std', or 'sstd'.")
   }

@@ -243,8 +243,6 @@ compute_losses_and_backtests <- function(df, models, c_levels, n, m, b = 1000) {
           }
         )
 
-        # backtest_results[[paste0(model_name, "_", c)]]$AverageLoss <-
-
       }
     } else {
       # Handle failed models
@@ -277,53 +275,48 @@ compute_losses_and_backtests <- function(df, models, c_levels, n, m, b = 1000) {
 }
 
 # Function to perform MCS test for each confidence level
-perform_mcs_test_by_confidence <- function(losses, alpha, nboot) {
-  # Extract unique confidence levels from column names
-  confidence_levels <- unique(gsub(".*_(0\\.[0-9]+)$", "\\1", colnames(losses)))
+perform_mcs_test_by_confidence <- function(losses, alpha_levels, nboot) {
+  # Initialize an empty list to store MCS results by confidence level and alpha
+  mcs_results <- list()
 
-  # Initialize a list to store MCS results
-  mcs_results_list <- list()
-
-  # Perform MCS test for each confidence level
-  for (conf_level in confidence_levels) {
-    print(paste("Performing MCS test for confidence level:", conf_level))
-
-    # Subset the losses matrix for the current confidence level
-    conf_losses <- losses[, grep(paste0("_", conf_level, "$"), colnames(losses))]
-
-    # Remove columns with all NA values
+  # Loop through each confidence level
+  for (conf_level in unique(sub(".*_", "", colnames(losses)))) {
+    # Filter losses for the current confidence level
+    conf_losses <- losses[, grepl(paste0("_", conf_level, "$"), colnames(losses))]
     conf_losses <- conf_losses[, colSums(is.na(conf_losses)) < nrow(conf_losses)]
+    conf_losses[is.na(conf_losses)] <- 1e6  # Handle NA values
 
-    # Replace remaining NA values with a large penalty
-    conf_losses[is.na(conf_losses)] <- 1e6
+    # Loop through each alpha level
+    for (alpha in alpha_levels) {
+      # Perform MCS test
+      mcs_result <- rugarch::mcsTest(conf_losses, alpha = alpha, nboot = nboot, boot = "stationary")
 
-    # Run the MCS test
-    mcs_result <- tryCatch(
-      rugarch::mcsTest(conf_losses, alpha = alpha, nboot = nboot, boot = "stationary"),
-      error = function(e) {
-        message(paste("MCS test failed for confidence level", conf_level, ":", e$message))
-        return(NULL)
-      }
-    )
+      # Extract included and excluded model indices and names for R and SQ
+      includedR_indices <- mcs_result$includedR
+      includedR_names <- colnames(conf_losses)[includedR_indices]
 
-    if (!is.null(mcs_result)) {
-      # Add model names for included and excluded results
-      includedR_names <- colnames(conf_losses)[mcs_result$includedR]
-      excludedR_names <- if (!is.null(mcs_result$excludedR)) colnames(conf_losses)[mcs_result$excludedR] else NULL
+      excludedR_indices <- setdiff(seq_len(ncol(conf_losses)), includedR_indices)
+      excludedR_names <- colnames(conf_losses)[excludedR_indices]
 
-      includedSQ_names <- colnames(conf_losses)[mcs_result$includedSQ]
-      excludedSQ_names <- if (!is.null(mcs_result$excludedSQ)) colnames(conf_losses)[mcs_result$excludedSQ] else NULL
+      includedSQ_indices <- mcs_result$includedSQ
+      includedSQ_names <- colnames(conf_losses)[includedSQ_indices]
 
-      # Append names to the result
-      mcs_result$includedR_names <- includedR_names
-      mcs_result$excludedR_names <- excludedR_names
-      mcs_result$includedSQ_names <- includedSQ_names
-      mcs_result$excludedSQ_names <- excludedSQ_names
+      excludedSQ_indices <- setdiff(seq_len(ncol(conf_losses)), includedSQ_indices)
+      excludedSQ_names <- colnames(conf_losses)[excludedSQ_indices]
+
+      # Save results in an organized format
+      mcs_results[[paste0("alpha_", alpha, "_conf_", conf_level)]] <- list(
+        includedR_indices = includedR_indices,
+        includedR_names = includedR_names,
+        excludedR_indices = excludedR_indices,
+        excludedR_names = excludedR_names,
+        includedSQ_indices = includedSQ_indices,
+        includedSQ_names = includedSQ_names,
+        excludedSQ_indices = excludedSQ_indices,
+        excludedSQ_names = excludedSQ_names
+      )
     }
-
-    # Store the result
-    mcs_results_list[[conf_level]] <- mcs_result
   }
 
-  return(mcs_results_list)
+  return(mcs_results)
 }
