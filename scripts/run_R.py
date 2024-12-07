@@ -10,8 +10,12 @@ project_dir = Path(__file__).resolve().parents[1]
 
 if __name__ == '__main__':
     r('''
-    renv::install("C:/Users/chris/RStudioProjects/caviar")
-    # renv::remove("caviar")
+    # renv::install("C:/Users/chris/RStudioProjects/caviar")
+    library(devtools)
+    devtools::install("C:/Users/chris/RStudioProjects/quarksNew")
+    # print(packageDescription("quarks"))
+    # devtools::install_github("https://github.com/chrisdybdahl/quarks")
+    # renv::install("zoo")
     # library(Rcpp)
     # cppFunction("int add(int x, int y) { return x + y; }")
     # x <- add(1, 2)  # Should return 3

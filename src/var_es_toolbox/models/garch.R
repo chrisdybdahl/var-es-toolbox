@@ -1,5 +1,6 @@
 library(rugarch)
 library(xts)
+library(zoo)
 
 forecast_u_GARCH <- function(
   data,
@@ -37,26 +38,24 @@ forecast_u_GARCH <- function(
   # Assume mean is zero
   # TODO: Assume mean is zero
   if (dist == "norm") {
-    quantile <- stats::qnorm(c)
-    pdf_value <- stats::dnorm(quantile)
-    es <- -sigmaFor * (pdf_value / c)
+    quantile <- sapply(c, function(conf) stats::qnorm(conf))
+    pdf_value <- sapply(c, function(conf) stats::dnorm(quantile[which(c == conf)]))
+    quantile <- matrix(rep(quantile, n), nrow = n, byrow = TRUE)
+    pdf_value <- matrix(rep(pdf_value, n), nrow = n, byrow = TRUE)
+    es <- sigmaFor * (pdf_value / c)
     var <- -sigmaFor * (quantile)
   } else if (dist == "std") {
     shapeFor <- garch_roll@forecast$density$Shape
     quantile <- sapply(c, function(conf) rugarch::qdist("std", p = conf, mu = 0, sigma = 1, shape = shapeFor))
-    pdf_value <- sapply(c, function(conf) rugarch::ddist("std", quantile[, which(c == conf)], mu = 0, sigma = 1, shape = shapeFor))
-    quantile <- quantile[1:n, , drop = FALSE]
-    pdf_value <- pdf_value[1:n, , drop = FALSE]
-    es <- -sigmaFor * ((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c))
+    pdf_value <- sapply(c, function(conf) rugarch::ddist("std", quantile[which(c == conf)], mu = 0, sigma = 1, shape = shapeFor))
+    es <- sigmaFor * ((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c))
     var <- -sigmaFor * (quantile)
   } else if (dist == "sstd") {
     shapeFor <- garch_roll@forecast$density$Shape
     skewFor <- garch_roll@forecast$density$Skew
     quantile <- sapply(c, function(conf) rugarch::qdist("sstd", p = conf, mu = 0, sigma = 1, skew = skewFor, shape = shapeFor))
-    pdf_value <- sapply(c, function(conf) rugarch::ddist("sstd", quantile[, which(c == conf)], mu = 0, sigma = 1, skew = skewFor, shape = shapeFor))
-    quantile <- quantile[1:n, , drop = FALSE]
-    pdf_value <- pdf_value[1:n, , drop = FALSE]
-    es <- -sigmaFor * ((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c))
+    pdf_value <- sapply(c, function(conf) rugarch::ddist("sstd", quantile[which(c == conf)], mu = 0, sigma = 1, skew = skewFor, shape = shapeFor))
+    es <- sigmaFor * ((shapeFor + quantile^2) / (shapeFor - 1) * (pdf_value / c))
     var <- -sigmaFor * (quantile)
   } else {
     stop("Unsupported distribution type. Use 'norm', 'std', or 'sstd'.")
@@ -65,10 +64,16 @@ forecast_u_GARCH <- function(
   dates <- tail(data$Date, n)
   VaR <- xts::xts(var, order.by = dates)
   ES <- xts::xts(es, order.by = dates)
+  VOL <- xts::xts(as.numeric(sigmaFor), order.by = dates)
   colnames(VaR) <- paste0("VaR_", c)
   colnames(ES) <- paste0("ES_", c)
-  VOL <- xts::xts(as.numeric(sigmaFor), order.by = dates, colnames = "VOL")
-  results_xts <- merge(VaR, ES, VOL)
+  colnames(VOL) <- "VOL"
+  results_xts <- xts::merge.xts(VaR, ES, VOL)
+
+  if (any(is.na(results_xts))) {
+    warning("There were NA values, carry forward last non-NA")
+    results_xts <- zoo::na.locf(results_xts, na.rm = FALSE)
+  }
 
   return(results_xts)
 }

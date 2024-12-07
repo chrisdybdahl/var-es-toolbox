@@ -1,6 +1,8 @@
 library(xts)
 library(quarks)
+library(quarksNew)
 library(rugarch)
+library(zoo)
 
 forecast_u_HS <- function(data, c, n, m) {
   df <- tail(data$Return, n + m)
@@ -25,7 +27,7 @@ forecast_u_HS <- function(data, c, n, m) {
   ES <- xts::xts(ES, order.by = dates)
   colnames(VaR) <- paste0("VaR_", c)
   colnames(ES) <- paste0("ES_", c)
-  results_xts <- merge(VaR, ES)
+  results_xts <- xts::merge.xts(VaR, ES)
 
   return(results_xts)
 }
@@ -64,10 +66,16 @@ forecast_u_FHS_EWMA <- function(data, c, n, m, lambda = 0.94, b = 10000) {
   dates <- tail(data$Date, n)
   VaR <- xts::xts(VaR, order.by = dates)
   ES <- xts::xts(ES, order.by = dates)
-  VOL <- xts::xts(vol_forecast, order.by = dates, colnames = "VOL")
+  VOL <- xts::xts(vol_forecast, order.by = dates)
   colnames(VaR) <- paste0("VaR_", c)
   colnames(ES) <- paste0("ES_", c)
-  results_xts <- merge(VaR, ES, VOL)
+  colnames(VOL) <- "VOL"
+  results_xts <- xts::merge.xts(VaR, ES, VOL)
+
+  if (any(is.na(results_xts))) {
+    warning("There were NA values, carry forward last non-NA")
+    results_xts <- zoo::na.locf(results_xts, na.rm = FALSE)
+  }
 
   return(results_xts)
 }
@@ -79,7 +87,7 @@ forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model =
   variance.model <- list(model = model, garchOrder = c(p, q))
 
   res <- lapply(c, function(conf) {
-    quarks::rollcast(
+    quarksNew::rollcast(
       x = df,
       p = 1 - conf,
       model = "GARCH",
@@ -89,7 +97,8 @@ forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model =
       nboot = b,
       variance.model = variance.model,
       mean.model = mean.model,
-      distribution.model = dist
+      distribution.model = dist,
+      solver = "hybrid"
     )
   })
 
@@ -111,7 +120,8 @@ forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model =
     window.size = m,
     refit.every = 1, # Since rollcast is implemented by refitting every period
     refit.window = "moving",
-    calculate.VaR = FALSE
+    calculate.VaR = FALSE,
+    solver = "hybrid"
   )
 
   sigma <- garch_roll@forecast$density$Sigma
@@ -120,10 +130,16 @@ forecast_u_FHS_GARCH <- function(data, c, n, m, p = 1, q = 1, b = 10000, model =
   dates <- tail(data$Date, n)
   VaR <- xts::xts(VaR, order.by = dates)
   ES <- xts::xts(ES, order.by = dates)
-  VOL <- xts::xts(sigma, order.by = dates, colnames = "VOL")
+  VOL <- xts::xts(sigma, order.by = dates)
   colnames(VaR) <- paste0("VaR_", c)
   colnames(ES) <- paste0("ES_", c)
-  results_xts <- merge(VaR, ES, VOL)
+  colnames(VOL) <- "VOL"
+  results_xts <- xts::merge.xts(VaR, ES, VOL)
+
+  if (any(is.na(results_xts))) {
+    warning("There were NA values, carry forward last non-NA")
+    results_xts <- zoo::na.locf(results_xts, na.rm = FALSE)
+  }
 
   return(results_xts)
 }

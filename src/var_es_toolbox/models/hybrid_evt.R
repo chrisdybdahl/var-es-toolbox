@@ -1,6 +1,7 @@
 library(rugarch)
 library(xts)
 library(evir)
+library(zoo)
 
 forecast_u_EVT_GARCH <- function(
   data,
@@ -109,10 +110,16 @@ forecast_u_EVT_GARCH <- function(
 
   # Create xts objects for VaR and ES
   dates <- tail(data$Date, n)
-  VaR_xts <- xts::xts(var, order.by = dates)
-  ES_xts <- xts::xts(es, order.by = dates)
+  VaR <- xts::xts(var, order.by = dates)
+  ES <- xts::xts(es, order.by = dates)
   VOL <- xts::xts(vol, order.by = dates, colnames = "VOL")
-  results_xts <- merge(VaR_xts, ES_xts, VOL)
+  colnames(VOL) <- "VOL"
+  results_xts <- xts::merge.xts(VaR, ES, VOL)
+
+  if (any(is.na(results_xts))) {
+    warning("There were NA values, carry forward last non-NA")
+    results_xts <- zoo::na.locf(results_xts, na.rm = FALSE)
+  }
 
   return(results_xts)
 }
